@@ -1,10 +1,21 @@
-import math
 import serial
 import time
 import cv2
 import logging
 import numpy as np
 import argparse
+
+'''
+A serial camera protocol to get image
+ 
+Environment : Ubuntu18.04+python3.6+
+
+Access protocol : RS485
+
+Run: python3 serial_camera.py --com ttyUSB0 --port 0 --img test.jpg
+
+Development : jeffa
+'''
 
 logger_script = logging.getLogger(__name__)
 logger_script.setLevel(level=logging.DEBUG)
@@ -23,7 +34,7 @@ class SerialCamera(object):
         try:
             self.port = serial.Serial(com_serial, baudrate=38400, bytesize=serial.EIGHTBITS, timeout=2)
         except Exception as e:
-            logger_script.info('||| Error serial open {}!'.format(e), exc_info=True)
+            logger_script.error('serial open {}'.format(e), exc_info=True)
 
     def __del__(self):
         self.port.close()
@@ -39,11 +50,10 @@ class SerialCamera(object):
         self.port.write(cmd)
         response = self.port.read(4)
         res = ''.join(['%02x ' % b for b in response])  # Attention：should add one more space
-        print(res)
         if (res == correct_response):
             return True
         else:
-            logger_script.info('||| Error serial reset!', exc_info=True)
+            logger_script.error('serial camera error reset', exc_info=True)
             return False
 
     def modify_port(self, no1, no2):
@@ -62,7 +72,7 @@ class SerialCamera(object):
             # After modifying the port,new port reset is required
             return self.reset(no2)
         else:
-            logger_script.info('||| Error serial modify!', exc_info=True)
+            logger_script.error('serial camera error modify!', exc_info=True)
             return False
 
     def set_image_compression(self, no, XX=0x36):
@@ -80,7 +90,7 @@ class SerialCamera(object):
         if (res == correct_response):
             return True
         else:
-            logger_script.info('||| Error serial compression!', exc_info=True)
+            logger_script.error('serial camera error compression!', exc_info=True)
             return False
 
     def set_image_pixel(self, no, res=0x00):
@@ -98,7 +108,7 @@ class SerialCamera(object):
         if (res == correct_response):
             return True
         else:
-            logger_script.info('||| Error serial pixel!', exc_info=True)
+            logger_script.error('serial camera error set pixel!', exc_info=True)
             return False
 
     def clear_buff(self, no):
@@ -115,7 +125,7 @@ class SerialCamera(object):
         if (res == correct_response):
             return True
         else:
-            logger_script.info('||| Error serial clear_buff!', exc_info=True)
+            logger_script.error('serial camera error clear_buff!', exc_info=True)
             return False
 
     def get_image_command(self, no):
@@ -132,7 +142,7 @@ class SerialCamera(object):
         if (res == correct_response):
             return True
         else:
-            logger_script.info('||| Error serial command!', exc_info=True)
+            logger_script.error('serial camera error command!', exc_info=True)
             return False
 
     def get_image_len(self, no):
@@ -146,11 +156,10 @@ class SerialCamera(object):
         self.port.write(cmd)
         response = self.port.read(9)
         res = ''.join(['%02x ' % b for b in response[0:7]])  # Attention：should add one more space
-        print(res)
         if (res == correct_response):
             return response[7:9]
         else:
-            logger_script.info('||| Error serial get_image_len!', exc_info=True)
+            logger_script.error('serial camera error get_image_len!', exc_info=True)
             return []
 
     def get_image(self, no, img_len, filename):
@@ -167,92 +176,64 @@ class SerialCamera(object):
             cmd = [0x56, no, 0x32, 0x0c, 0x00, 0x0a, 0x00, 0x00, (i & 0xff00) >> 8, (i & 0x00ff), 0x00, 0x00,
                    (byteLen & 0xff00) >> 8, (byteLen & 0x00ff), 0x00, 0xff]
             self.port.write(cmd)
-            time.sleep(20)  # The time is serial receives data,680 needs 15s+
+            time.sleep(15)  # The time is serial receives data,680 needs 15s+
             re = self.port.read(byteLen + 50)
             wf = open(filename, "wb")
             wf.write(re[5:-5])
             wf.close()
-            time.sleep(1)
             image = cv2.imread(filename)
-            # j_count = math.ceil(byteLen / 512)
-            # while j < j_count:
-            #     re = self.port.read(512)
-            #     if j == 0:
-            #         wf = open(filename, "wb")
-            #         wf.write(re[5:])
-            #         wf.close()
-            #     elif j == j_count - 1:
-            #         wf = open(filename, "ab+")
-            #         wf.write(re[:-5])
-            #         wf.close()
-            #     else:
-            #         wf = open(filename, "ab+")
-            #         wf.write(re)
-            #         wf.close()
-            #     j += 1
-            # image = cv2.imread(filename)
             if isinstance(image, np.ndarray):
                 return True
             else:
-                logger_script.info('||| Error serial get_image!', exc_info=True)
+                logger_script.error('serial camera error get_image!')
                 return False
         except:
-            print("[INFO] img data broken.")
+            logger_script.error('serial camera get_image_data broken')
             return False
 
-    def main_serial_append_image(self, no, filename):
+    def update(self, no, filename):
         try:
             is_command = self.get_image_command(no)
             if is_command:
                 image_len = self.get_image_len(no)
                 return len(image_len) > 0 and self.get_image(no, image_len, filename) and self.clear_buff(no)
             else:
-                logger_script.info('||| Error serial get_image!', exc_info=True)
                 return False
         except Exception as e:
             logger_script.info('||| Error serial get_image {}!'.format(e), exc_info=True)
             return False
 
-    def add_logo(self, origin_img):
-        temp_img = cv2.imread("icon.jpg")
-        if isinstance(temp_img, np.ndarray):
-            print("sss")
-            temp_img = cv2.resize(temp_img, (0, 0), fx=0.5, fy=0.5, interpolation=cv2.INTER_CUBIC)
-            gray = cv2.cvtColor(temp_img, cv2.COLOR_BGR2GRAY)
-            h, w = gray.shape[:2]
-            roi = origin_img[:h, :w]
-            ret, mask = cv2.threshold(gray, 200, 255, cv2.THRESH_BINARY)
-            mask_inv = cv2.bitwise_not(mask)
-            img1_bg = cv2.bitwise_and(roi, roi, mask=mask)
-            img2_fg = cv2.bitwise_and(temp_img, temp_img, mask=mask_inv)
-            dst = cv2.add(img1_bg, img2_fg)
-            show_img = origin_img.copy()
-            show_img[:h, :w] = dst
-            return show_img
-        else:
-            return None
-
 
 def update(serial_com, port, img_save_path):
+    '''
+    get serial camera image
+    :param serial_com: serial camera eg:ttyUSB0
+    :param port: serial camera port 0
+    :param img_save_path: output image path
+    :return: ok or wrong
+    '''
     # cv2.namedWindow("serial_camera", cv2.WINDOW_FREERATIO)
+    # 注意串口不能连续关闭打开，会导致生成的图片丢帧
     sc = SerialCamera(serial_com)
-    # set_buffer_size 设置缓冲区后就不会出现掉帧的问题，但由于这个方法是win32使用的，所有liunx下还没找到解决掉帧的办法
-    # sc.port.set_buffer_size(60000,60000)
-    is_append = sc.main_serial_append_image(int(port), img_save_path)
+    is_append = sc.update(int(port), img_save_path)
     if is_append:
         origin_img = cv2.imread(img_save_path)
-        # show_img = sc.add_logo(origin_img)
         if isinstance(origin_img, np.ndarray):
-            cv2.imwrite(img_save_path, origin_img)
+            return "ok"
             # cv2.imshow("serial_camera", show_img)
             # cv2.waitKey(0)
-        else:
-            logger_script.info('||| Error serial add_logo {}!', exc_info=True)
     else:
         return "wrong"
 
 
-def modify(serial_com, ori_port, new_port):
+def modify_port(serial_com, ori_port, new_port):
+    '''
+    modify serial camera port
+    :param serial_com: serial camera eg:ttyUSB0
+    :param ori_port: serial camera origin port
+    :param new_port: serial camera new port
+    :return: ok or wrong
+    '''
     sc = SerialCamera(serial_com)
     is_modify = sc.modify_port(new_port, ori_port)
     if is_modify:
@@ -261,15 +242,19 @@ def modify(serial_com, ori_port, new_port):
         return "wrong"
 
 
-#
 if __name__ == '__main__':
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--com", "-c", help="serial_com")
     parser.add_argument("--port", "-p", help="serial_port")
     parser.add_argument("--img", "-i", help="img_save_path")
 
     args = parser.parse_args()
-    serial_com = args.com
-    serial_port = args.port
-    img_save_path = args.img
-    update(serial_com, serial_port, img_save_path)
+    if args.img_save_path:
+        serial_com = args.com
+        serial_port = args.port
+        img_save_path = args.img
+        update(serial_com, serial_port, img_save_path)
+        print('||| Completed')
+    else:
+        print('||| Without query parameters, exit.')
