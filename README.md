@@ -10,4 +10,4 @@
 >基于OpenCV的orb定位和灰度统计的指针识别
 
 4. hik_infraed
->海康热成像相机
+>海康热成像相机获取温度SDK，python
